@@ -1,0 +1,268 @@
+.page {
+  color: #e8eef7;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 2.5rem 1.5rem 3rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.hero h1 {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 2.4rem;
+  letter-spacing: -0.01em;
+}
+
+.hero .lede {
+  margin: 0;
+  color: #9db3d4;
+  max-width: 760px;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.8rem;
+  color: #7dd3fc;
+  margin: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  background: linear-gradient(135deg, rgba(31, 41, 74, 0.8), rgba(17, 24, 39, 0.85));
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.card-head h2 {
+  margin: 0.1rem 0 0;
+}
+
+.badge {
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.14);
+  color: #7dd3fc;
+  font-weight: 600;
+  border: 1px solid rgba(125, 211, 252, 0.32);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.9rem;
+}
+
+.field span {
+  color: #9db3d4;
+  font-size: 0.95rem;
+}
+
+input,
+textarea,
+button {
+  font-family: inherit;
+}
+
+input,
+textarea {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e8eef7;
+  border-radius: 10px;
+  padding: 0.7rem 0.75rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+input:focus,
+textarea:focus {
+  border-color: #7dd3fc;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 140px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.ghost,
+.primary {
+  border-radius: 12px;
+  padding: 0.65rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: transparent;
+  color: #e8eef7;
+  cursor: pointer;
+  font-weight: 600;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.ghost:hover {
+  border-color: rgba(125, 211, 252, 0.6);
+  background: rgba(125, 211, 252, 0.08);
+}
+
+.primary {
+  background: linear-gradient(120deg, #0ea5e9, #7c3aed);
+  border: none;
+  box-shadow: 0 10px 30px rgba(14, 165, 233, 0.3);
+}
+
+.primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.hint {
+  color: #8ea2c2;
+  margin: 0 0 0.75rem;
+}
+
+.wallets {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.wallets-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #9db3d4;
+}
+
+.wallet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pill input {
+  margin: 0;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.muted {
+  color: #8ea2c2;
+  margin: 0;
+}
+
+.metric {
+  margin: 0.1rem 0 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 0.7rem 0.9rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.sig {
+  margin: 0.1rem 0 0;
+  color: #7dd3fc;
+  word-break: break-all;
+}
+
+.error-text {
+  margin: 0.1rem 0 0;
+  color: #fca5a5;
+}
+
+.status {
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.status.good {
+  background: rgba(74, 222, 128, 0.18);
+  color: #4ade80;
+}
+
+.status.bad {
+  background: rgba(248, 113, 113, 0.18);
+  color: #f87171;
+}
+
+.error {
+  border: 1px solid rgba(248, 113, 113, 0.6);
+  background: rgba(248, 113, 113, 0.12);
+  color: #ffe4e6;
+  padding: 0.7rem 0.75rem;
+  border-radius: 12px;
+  margin-bottom: 0.8rem;
+}
+
+code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 1.5rem 1rem 2rem;
+  }
+
+  .hero h1 {
+    font-size: 2rem;
+  }
+}
