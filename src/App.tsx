@@ -36,6 +36,7 @@ function App() {
   const [walletInput, setWalletInput] = useState('')
   const [wallets, setWallets] = useState<WalletRef[]>([])
   const [selected, setSelected] = useState<string[]>([])
+  const [generateCount, setGenerateCount] = useState(5)
   const [mint, setMint] = useState('')
   const [destination, setDestination] = useState('')
   const [amount, setAmount] = useState('')
@@ -118,6 +119,24 @@ function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
+  }
+
+  const handleGenerateWallets = () => {
+    const count = Math.max(1, Math.min(MAX_WALLETS, Math.floor(generateCount)))
+    const generated: WalletRef[] = Array.from({ length: count }, (_, idx) => ({
+      name: `bundle-${Date.now()}-${idx + 1}`,
+      keypair: Keypair.generate(),
+    }))
+
+    setWallets(generated)
+    setSelected(generated.map((w) => w.name))
+    setError(null)
+
+    // Prefill textarea so the user can copy/export the generated bundle
+    const exportable = generated
+      .map((w) => `${w.name}: ${bs58.encode(w.keypair.secretKey)}`)
+      .join('\n')
+    setWalletInput(exportable)
   }
 
   const toggleWallet = (name: string) => {
@@ -312,9 +331,27 @@ function App() {
               <p className="eyebrow">Wallets</p>
               <h2>Load up to 30</h2>
             </div>
-            <button className="ghost" onClick={handleLoadWallets}>
-              Load wallets
-            </button>
+            <div className="row" style={{ gap: '0.5rem', alignItems: 'center' }}>
+              <label className="field" style={{ width: 120 }}>
+                <span>Generate</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={MAX_WALLETS}
+                  value={generateCount}
+                  onChange={(e) => {
+                    const next = Number(e.target.value)
+                    setGenerateCount(Number.isNaN(next) ? 1 : next)
+                  }}
+                />
+              </label>
+              <button className="ghost" onClick={handleGenerateWallets}>
+                Generate
+              </button>
+              <button className="ghost" onClick={handleLoadWallets}>
+                Load wallets
+              </button>
+            </div>
           </div>
           <p className="hint">
             One per line. Formats: <code>name: base58</code> or
