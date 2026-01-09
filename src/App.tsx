@@ -14,8 +14,14 @@ const envApiKey = import.meta.env.VITE_API_KEY ?? ''
 const envGate = import.meta.env.VITE_DASH_PASSWORD ?? ''
 const MAX_WALLETS = 30
 const DEFAULT_CONCURRENCY = 8
-const WALLET_STORAGE_KEY = 'evorape_wallets_v1'
+const WALLET_STORAGE_KEY = 'evorape_wallets_v2'
 const AUTH_STORAGE_KEY = 'evorape_auth_v1'
+
+type WalletBundle = {
+  id: string
+  label: string
+  wallets: WalletRef[]
+}
 
 function toRawAmount(amount: string, decimals: number): bigint {
   const normalized = amount.trim()
@@ -32,7 +38,7 @@ function toRawAmount(amount: string, decimals: number): bigint {
 }
 
 function App() {
-  const [wallets, setWallets] = useState<WalletRef[]>([])
+  const [bundles, setBundles] = useState<WalletBundle[]>([])
   const [selected, setSelected] = useState<string[]>([])
   const [generateCount, setGenerateCount] = useState(5)
   const [balances, setBalances] = useState<Record<string, number>>({})
@@ -51,35 +57,64 @@ function App() {
   const [gateError, setGateError] = useState<string | null>(null)
   const apiBaseTrimmed = useMemo(() => envApi, [])
 
-  // Restore persisted wallets on load
+  // Restore persisted bundles on load (fallback to legacy list if present)
   useEffect(() => {
     try {
       const raw = localStorage.getItem(WALLET_STORAGE_KEY)
       if (!raw) return
-      const parsed = JSON.parse(raw) as { name: string; secret: string }[]
-      const restored = parsed.map((w) => ({
-        name: w.name,
-        keypair: Keypair.fromSecretKey(bs58.decode(w.secret)),
-      }))
-      setWallets(restored)
-      setSelected(restored.map((w) => w.name))
+      const parsed = JSON.parse(raw)
+
+      if (Array.isArray(parsed)) {
+        // legacy flat list
+        const restored = parsed.map((w: { name: string; secret: string }, idx: number) => ({
+          name: w.name || `wallet-${idx + 1}`,
+          keypair: Keypair.fromSecretKey(bs58.decode(w.secret)),
+        }))
+        const legacyBundle: WalletBundle = {
+          id: `bundle-${Date.now()}`,
+          label: 'Bundle 1',
+          wallets: restored,
+        }
+        setBundles([legacyBundle])
+        setSelected(restored.map((w) => w.name))
+        return
+      }
+
+      if (parsed && Array.isArray(parsed.bundles)) {
+        const restoredBundles: WalletBundle[] = parsed.bundles.map((b: any, bIdx: number) => ({
+          id: b.id || `bundle-${bIdx + 1}`,
+          label: b.label || `Bundle ${bIdx + 1}`,
+          wallets: (b.wallets || []).map((w: any, idx: number) => ({
+            name: w.name || `${b.label || 'bundle'}-${idx + 1}`,
+            keypair: Keypair.fromSecretKey(bs58.decode(w.secret)),
+          })),
+        }))
+        setBundles(restoredBundles)
+        setSelected(restoredBundles.flatMap((b) => b.wallets.map((w) => w.name)))
+      }
     } catch (err) {
       console.error('Wallet restore failed', err)
     }
   }, [])
 
-  // Persist wallets when they change
+  // Persist bundles when they change
   useEffect(() => {
-    if (!wallets.length) {
+    if (!bundles.length) {
       localStorage.removeItem(WALLET_STORAGE_KEY)
       return
     }
-    const payload = wallets.map((w) => ({
-      name: w.name,
-      secret: bs58.encode(w.keypair.secretKey),
-    }))
+    const payload = {
+      bundles: bundles.map((b) => ({
+        id: b.id,
+        label: b.label,
+        wallets: b.wallets.map((w) => ({
+          name: w.name,
+          secret: bs58.encode(w.keypair.secretKey),
+        })),
+      })),
+    }
     localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(payload))
-  }, [wallets])
+  }, [bundles])
 
   // Restore auth
   useEffect(() => {
@@ -97,24 +132,32 @@ function App() {
     localStorage.setItem(AUTH_STORAGE_KEY, 'true')
   }
 
+  const allWallets = useMemo(() => bundles.flatMap((b) => b.wallets), [bundles])
+
   const selectedWallets = useMemo(
     () =>
       selected.length
-        ? wallets.filter((w) => selected.includes(w.name))
-        : wallets,
-    [selected, wallets],
+        ? allWallets.filter((w) => selected.includes(w.name))
+        : allWallets,
+    [selected, allWallets],
   )
 
   const handleGenerateWallets = () => {
     const count = Math.max(1, Math.min(MAX_WALLETS, Math.floor(generateCount)))
+    const bundleIndex = bundles.length + 1
+    const bundleId = `bundle-${Date.now()}`
+    const bundleLabel = `Bundle ${bundleIndex}`
+
     const generated: WalletRef[] = Array.from({ length: count }, (_, idx) => ({
-      name: `bundle-${Date.now()}-${idx + 1}`,
+      name: `${bundleLabel.toLowerCase().replace(/\s+/g, '-')}-${idx + 1}`,
       keypair: Keypair.generate(),
     }))
 
-    setWallets(generated)
-    setSelected(generated.map((w) => w.name))
+    const nextBundles = [...bundles, { id: bundleId, label: bundleLabel, wallets: generated }]
+    setBundles(nextBundles)
+    setSelected((prev) => [...prev, ...generated.map((w) => w.name)])
     setError(null)
+    void refreshBalances(nextBundles.flatMap((b) => b.wallets))
   }
 
   const refreshBalances = async (current: WalletRef[]) => {
@@ -136,22 +179,40 @@ function App() {
   }
 
   useEffect(() => {
-    if (!wallets.length) return
-    void refreshBalances(wallets)
-  }, [wallets, apiBaseTrimmed])
+    if (!allWallets.length) return
+    void refreshBalances(allWallets)
+  }, [allWallets, apiBaseTrimmed])
 
   const handleDownloadKeys = () => {
-    if (!wallets.length) return
-    const text = wallets
-      .map((w, idx) => `${idx + 1}. ${w.name}: ${bs58.encode(w.keypair.secretKey)}`)
-      .join('\n')
-    const blob = new Blob([text], { type: 'text/plain' })
+    if (!bundles.length) return
+    const lines: string[] = []
+    bundles.forEach((b, bIdx) => {
+      lines.push(`${bIdx + 1}. ${b.label}`)
+      b.wallets.forEach((w, idx) => {
+        lines.push(`  ${idx + 1}. ${w.name}: ${bs58.encode(w.keypair.secretKey)}`)
+      })
+      lines.push('')
+    })
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `wallet-bundle-${Date.now()}.txt`
+    link.download = `wallet-bundles-${Date.now()}.txt`
     link.click()
     URL.revokeObjectURL(url)
+  }
+
+  const clipAddress = async (address: string) => {
+    try {
+      await navigator.clipboard.writeText(address)
+    } catch (err) {
+      console.error('Clipboard failed', err)
+    }
+  }
+
+  const shortAddress = (address: string) => {
+    if (address.length <= 8) return address
+    return `${address.slice(0, 4)}...${address.slice(-4)}`
   }
 
   const toggleWallet = (name: string) => {
@@ -356,50 +417,89 @@ function App() {
               <button className="ghost" onClick={handleGenerateWallets}>
                 Generate
               </button>
-                <button className="ghost" onClick={() => refreshBalances(wallets)} disabled={isLoadingBalances}>
+              <button
+                className="ghost"
+                onClick={() => refreshBalances(allWallets)}
+                disabled={isLoadingBalances}
+              >
                   {isLoadingBalances ? 'Loading...' : 'Refresh balances'}
                 </button>
-                <button className="ghost" onClick={handleDownloadKeys} disabled={!wallets.length}>
+              <button className="ghost" onClick={handleDownloadKeys} disabled={!allWallets.length}>
                   Download keys
                 </button>
             </div>
           </div>
-            <p className="hint">Generate a bundle, view balances, download secrets as txt.</p>
-          {wallets.length > 0 && (
-            <div className="wallets">
+          <p className="hint">Generate a bundle, expand to see wallets, click address to copy.</p>
+          {bundles.length === 0 && <p className="muted">No bundles yet.</p>}
+          {bundles.length > 0 && (
+            <div className="bundles">
               <div className="wallets-head">
-                  <span>{wallets.length} generated</span>
+                <span>{bundles.length} bundle{bundles.length > 1 ? 's' : ''}</span>
                 <button
                   className="ghost"
-                  onClick={() => setSelected(wallets.map((w) => w.name))}
+                  onClick={() => setSelected(allWallets.map((w) => w.name))}
+                  disabled={!allWallets.length}
                 >
                   Select all
                 </button>
               </div>
-                <div className="wallet-grid">
-                  {wallets.map((w, idx) => (
-                    <label key={w.name} className="pill" style={{ justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <input
-                            type="checkbox"
-                            checked={selected.includes(w.name)}
-                            onChange={() => toggleWallet(w.name)}
-                          />
-                          <span>{idx + 1}. {w.name}</span>
+              {bundles.map((bundle, bIdx) => {
+                const bundleWallets = bundle.wallets
+                const bundleBalance = bundleWallets.reduce((sum, w) => {
+                  const lamports = balances[w.keypair.publicKey.toBase58()] ?? 0
+                  return sum + lamports
+                }, 0)
+
+                return (
+                  <details key={bundle.id} className="bundle-card">
+                    <summary className="bundle-head">
+                      <div>
+                        <p className="eyebrow">{bundle.label}</p>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          {bundleWallets.length} wallets • {(bundleBalance / 1_000_000_000).toFixed(4)} SOL total
                         </div>
-                        <span className="muted" style={{ fontSize: 12 }}>
-                          {w.keypair.publicKey.toBase58()}
-                        </span>
                       </div>
-                      <span className="metric" style={{ fontSize: 14 }}>
-                        {balances[w.keypair.publicKey.toBase58()] !== undefined
-                          ? `${(balances[w.keypair.publicKey.toBase58()]! / 1_000_000_000).toFixed(4)} SOL`
-                          : '…'}
-                      </span>
-                    </label>
-                  ))}
-                </div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        Bundle {bIdx + 1}
+                      </div>
+                    </summary>
+                    <div className="wallet-list">
+                      {bundleWallets.map((w, idx) => {
+                        const addr = w.keypair.publicKey.toBase58()
+                        const bal = balances[addr]
+                        const isSelected = selected.includes(w.name)
+                        return (
+                          <div key={w.name} className="wallet-row">
+                            <label className="pill" style={{ justifyContent: 'space-between', width: '100%' }}>
+                              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleWallet(w.name)}
+                                />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                  <span>{idx + 1}. {w.name}</span>
+                                  <button
+                                    type="button"
+                                    className="address-chip"
+                                    onClick={() => clipAddress(addr)}
+                                    title="Click to copy"
+                                  >
+                                    {shortAddress(addr)}
+                                  </button>
+                                </div>
+                              </div>
+                              <span className="metric" style={{ fontSize: 13 }}>
+                                {bal !== undefined ? `${(bal / 1_000_000_000).toFixed(4)} SOL` : '…'}
+                              </span>
+                            </label>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </details>
+                )
+              })}
             </div>
           )}
         </div>
