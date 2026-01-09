@@ -4,6 +4,7 @@ import bs58 from 'bs58'
 import {
   executeBatch,
   fetchBalances,
+  executeSwapBatch,
   type WalletRef,
   type WalletSendResult,
 } from './lib/solana'
@@ -47,6 +48,10 @@ function App() {
   const [destination, setDestination] = useState('')
   const [amount, setAmount] = useState('')
   const [decimals, setDecimals] = useState(6)
+  const [buyMint, setBuyMint] = useState('')
+  const [buySol, setBuySol] = useState('0.1')
+  const [buySlippageBps, setBuySlippageBps] = useState(100)
+  const [buyRandomPct, setBuyRandomPct] = useState(10)
   const [priorityFee, setPriorityFee] = useState(0)
   const [concurrency, setConcurrency] = useState(DEFAULT_CONCURRENCY)
   const [results, setResults] = useState<WalletSendResult[]>([])
@@ -263,6 +268,52 @@ function App() {
     }
   }
 
+  const handleExecuteBuys = async () => {
+    setError(null)
+    setResults([])
+
+    try {
+      if (!apiBaseTrimmed) throw new Error('API base URL is required')
+      if (!buyMint) throw new Error('Target mint is required')
+      if (!selectedWallets.length) throw new Error('Select at least one wallet')
+
+      const mintPk = new PublicKey(buyMint)
+      const baseSol = Number(buySol)
+      if (!Number.isFinite(baseSol) || baseSol <= 0) throw new Error('Base SOL must be positive')
+      const slippageBps = Math.max(1, Math.floor(Number(buySlippageBps) || 0))
+      const randomPct = Math.max(0, Math.min(25, Number(buyRandomPct) || 0))
+      const safeConcurrency = Math.min(
+        MAX_WALLETS,
+        Math.max(1, concurrency || 1),
+      )
+
+      const baseLamports = Math.floor(baseSol * 1_000_000_000)
+      if (baseLamports <= 0) throw new Error('Base SOL too small')
+
+      setIsRunning(true)
+
+      await executeSwapBatch(
+        selectedWallets,
+        mintPk,
+        baseLamports,
+        slippageBps,
+        randomPct,
+        safeConcurrency,
+        apiBaseTrimmed,
+        envApiKey || undefined,
+        (res) =>
+          setResults((prev) => {
+            const others = prev.filter((p) => p.wallet !== res.wallet)
+            return [...others, res]
+          }),
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setIsRunning(false)
+    }
+  }
+
   if (!isAuthed) {
     return (
       <div className="page">
@@ -344,29 +395,81 @@ function App() {
         <div className="card">
           <div className="card-head">
             <div>
-              <p className="eyebrow">Token action</p>
-              <h2>Transfer setup</h2>
+              <p className="eyebrow">Buy memecoin</p>
+              <h2>Swap SOL → mint</h2>
             </div>
+            <button className="primary" onClick={handleExecuteBuys} disabled={isRunning}>
+              {isRunning ? 'Running...' : 'Execute buys'}
+            </button>
           </div>
           <label className="field">
-            <span>SPL Mint</span>
+            <span>Target mint (contract address)</span>
             <input
-              value={mint}
-              onChange={(e) => setMint(e.target.value)}
-              placeholder="Token mint address"
-            />
-          </label>
-          <label className="field">
-            <span>Destination owner</span>
-            <input
-              value={destination}
-              onChange={(e) => setDestination(e.target.value)}
-              placeholder="Destination wallet for all transfers"
+              value={buyMint}
+              onChange={(e) => setBuyMint(e.target.value)}
+              placeholder="e.g. So1111... for SOL pairs"
             />
           </label>
           <div className="row">
             <label className="field">
-              <span>Amount (token units)</span>
+              <span>Base amount (SOL per wallet)</span>
+              <input
+                type="number"
+                min={0}
+                step={0.0001}
+                value={buySol}
+                onChange={(e) => setBuySol(e.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>Slippage (%)</span>
+              <input
+                type="number"
+                min={0.01}
+                max={5}
+                step={0.01}
+                value={buySlippageBps / 100}
+                onChange={(e) => {
+                  const next = Number(e.target.value)
+                  setBuySlippageBps(Math.max(1, Math.floor((Number.isNaN(next) ? 0.01 : next) * 100)))
+                }}
+              />
+            </label>
+          </div>
+          <div className="row">
+            <label className="field">
+              <span>Randomizer (±%)</span>
+              <input
+                type="number"
+                min={0}
+                max={25}
+                value={buyRandomPct}
+                onChange={(e) => {
+                  const next = Number(e.target.value)
+                  setBuyRandomPct(Number.isNaN(next) ? 0 : next)
+                }}
+              />
+            </label>
+            <label className="field">
+              <span>Legacy transfer mint</span>
+              <input
+                value={mint}
+                onChange={(e) => setMint(e.target.value)}
+                placeholder="(Optional) SPL mint for transfers"
+              />
+            </label>
+          </div>
+          <div className="row">
+            <label className="field">
+              <span>Destination owner (transfer)</span>
+              <input
+                value={destination}
+                onChange={(e) => setDestination(e.target.value)}
+                placeholder="Destination wallet for transfers"
+              />
+            </label>
+            <label className="field">
+              <span>Amount (token units, transfer)</span>
               <input
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
@@ -374,7 +477,7 @@ function App() {
               />
             </label>
             <label className="field">
-              <span>Decimals</span>
+              <span>Decimals (transfer)</span>
               <input
                 type="number"
                 min={0}

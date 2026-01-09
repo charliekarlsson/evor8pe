@@ -1,7 +1,13 @@
 import bs58 from 'bs58'
 import pLimit from 'p-limit'
 import { Buffer } from 'buffer'
-import { ComputeBudgetProgram, Keypair, PublicKey, Transaction } from '@solana/web3.js'
+import {
+  ComputeBudgetProgram,
+  Keypair,
+  PublicKey,
+  Transaction,
+  VersionedTransaction,
+} from '@solana/web3.js'
 import {
   createAssociatedTokenAccountIdempotentInstruction,
   createTransferInstruction,
@@ -21,6 +27,52 @@ export type WalletSendResult = {
   wallet: string
   signature?: string
   error?: string
+}
+
+type SwapQuote = {
+  inAmount: string
+  outAmount: string
+  otherAmountThreshold: string
+  slippageBps: number
+  platformFee: { amount: string } | null
+}
+
+async function jupQuote(
+  inputMint: string,
+  outputMint: string,
+  amount: number,
+  slippageBps: number,
+): Promise<SwapQuote> {
+  const url = new URL('https://quote-api.jup.ag/v6/quote')
+  url.searchParams.set('inputMint', inputMint)
+  url.searchParams.set('outputMint', outputMint)
+  url.searchParams.set('amount', String(Math.max(1, Math.floor(amount))))
+  url.searchParams.set('slippageBps', String(Math.max(1, slippageBps)))
+  const res = await fetch(url.toString())
+  if (!res.ok) throw new Error(`Quote failed: ${res.status}`)
+  return (await res.json()) as SwapQuote
+}
+
+async function jupSwapTx(
+  quote: SwapQuote,
+  userPk: string,
+  slippageBps: number,
+): Promise<string> {
+  const res = await fetch('https://quote-api.jup.ag/v6/swap', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      quoteResponse: quote,
+      userPublicKey: userPk,
+      wrapAndUnwrapSol: true,
+      slippageBps: Math.max(1, slippageBps),
+      dynamicComputeUnitLimit: true,
+      dynamicSlippage: false,
+    }),
+  })
+  if (!res.ok) throw new Error(`Swap build failed: ${res.status}`)
+  const data = (await res.json()) as { swapTransaction: string }
+  return data.swapTransaction
 }
 
 export async function fetchBalances(
@@ -188,6 +240,84 @@ export async function sendWithRetry(
   }
 
   return { wallet: walletName, error: 'exhausted retries' }
+}
+
+export async function sendVersionedWithRetry(
+  tx: VersionedTransaction,
+  walletName: string,
+  apiBase: string,
+  apiKey: string | undefined,
+  maxRetries = 3,
+): Promise<WalletSendResult> {
+  const blockhash = tx.message.recentBlockhash
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(`${apiBase}/sendRaw`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { 'x-api-key': apiKey } : {}),
+        },
+        body: JSON.stringify({
+          tx: Buffer.from(tx.serialize()).toString('base64'),
+          blockhash,
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `sendRaw failed: ${res.status}`)
+      }
+      const data = (await res.json()) as { signature: string }
+      return { wallet: walletName, signature: data.signature }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (attempt === maxRetries) {
+        return { wallet: walletName, error: msg }
+      }
+      const backoffMs = 150 * attempt
+      await new Promise((res) => setTimeout(res, backoffMs))
+    }
+  }
+  return { wallet: walletName, error: 'exhausted retries' }
+}
+
+export async function executeSwapBatch(
+  wallets: WalletRef[],
+  outputMint: PublicKey,
+  baseLamports: number,
+  slippageBps: number,
+  randomizerPct: number,
+  concurrency: number,
+  apiBase: string,
+  apiKey: string | undefined,
+  onResult?: (r: WalletSendResult) => void,
+): Promise<WalletSendResult[]> {
+  const limit = pLimit(Math.max(1, concurrency))
+  const inputMint = 'So11111111111111111111111111111111111111112'
+  const randClamp = Math.max(0, Math.min(25, randomizerPct))
+
+  const tasks = wallets.map((wallet) =>
+    limit(async () => {
+      try {
+        const factor = 1 + ((Math.random() * 2 - 1) * randClamp) / 100
+        const amountLamports = Math.max(1, Math.floor(baseLamports * factor))
+        const quote = await jupQuote(inputMint, outputMint.toBase58(), amountLamports, slippageBps)
+        const swapB64 = await jupSwapTx(quote, wallet.keypair.publicKey.toBase58(), slippageBps)
+        const vtx = VersionedTransaction.deserialize(Buffer.from(swapB64, 'base64'))
+        vtx.sign([wallet.keypair])
+        const res = await sendVersionedWithRetry(vtx, wallet.name, apiBase, apiKey)
+        onResult?.(res)
+        return res
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        const res: WalletSendResult = { wallet: wallet.name, error: msg }
+        onResult?.(res)
+        return res
+      }
+    }),
+  )
+
+  return Promise.all(tasks)
 }
 
 export async function executeBatch(
