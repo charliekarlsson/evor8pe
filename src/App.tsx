@@ -236,12 +236,9 @@ function App() {
   return (
     <div className="page">
       <header className="hero">
-        <p className="eyebrow">Solana multi-wallet executor</p>
-        <h1>Control up to 30 wallets from one dashboard</h1>
-        <p className="lede">
-          Runs locally against your Helius RPC. Configure wallets, set SPL token
-          params, and fire parallel transfers with per-wallet isolation.
-        </p>
+        <p className="eyebrow">Meme ops console</p>
+        <h1>Batch wallets. Quick fire.</h1>
+        <p className="lede">Generate bundles, watch SOL, and push parallel transfers fast.</p>
       </header>
 
       <section className="grid">
@@ -367,7 +364,7 @@ function App() {
                 </button>
             </div>
           </div>
-            <p className="hint">Generate a bundle, view balances, and download secrets as txt.</p>
+            <p className="hint">Generate a bundle, view balances, download secrets as txt.</p>
           {wallets.length > 0 && (
             <div className="wallets">
               <div className="wallets-head">
