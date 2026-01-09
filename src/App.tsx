@@ -3,7 +3,7 @@ import { PublicKey, Keypair } from '@solana/web3.js'
 import bs58 from 'bs58'
 import {
   executeBatch,
-  parseWalletBatch,
+  fetchBalances,
   type WalletRef,
   type WalletSendResult,
 } from './lib/solana'
@@ -33,10 +33,11 @@ function toRawAmount(amount: string, decimals: number): bigint {
 
 function App() {
   const [apiBase, setApiBase] = useState(envApi)
-  const [walletInput, setWalletInput] = useState('')
   const [wallets, setWallets] = useState<WalletRef[]>([])
   const [selected, setSelected] = useState<string[]>([])
   const [generateCount, setGenerateCount] = useState(5)
+  const [balances, setBalances] = useState<Record<string, number>>({})
+  const [isLoadingBalances, setIsLoadingBalances] = useState(false)
   const [mint, setMint] = useState('')
   const [destination, setDestination] = useState('')
   const [amount, setAmount] = useState('')
@@ -106,21 +107,6 @@ function App() {
     [selected, wallets],
   )
 
-  const handleLoadWallets = () => {
-    try {
-      const parsed = parseWalletBatch(walletInput)
-      if (parsed.length > MAX_WALLETS) {
-        setError(`Limit ${MAX_WALLETS} wallets; received ${parsed.length}`)
-        return
-      }
-      setWallets(parsed)
-      setSelected(parsed.map((w) => w.name))
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
   const handleGenerateWallets = () => {
     const count = Math.max(1, Math.min(MAX_WALLETS, Math.floor(generateCount)))
     const generated: WalletRef[] = Array.from({ length: count }, (_, idx) => ({
@@ -131,12 +117,43 @@ function App() {
     setWallets(generated)
     setSelected(generated.map((w) => w.name))
     setError(null)
+  }
 
-    // Prefill textarea so the user can copy/export the generated bundle
-    const exportable = generated
-      .map((w) => `${w.name}: ${bs58.encode(w.keypair.secretKey)}`)
+  const refreshBalances = async (current: WalletRef[]) => {
+    if (!current.length || !apiBaseTrimmed) {
+      setBalances({})
+      return
+    }
+    setIsLoadingBalances(true)
+    try {
+      const pubkeys = current.map((w) => w.keypair.publicKey)
+      const fetched = await fetchBalances(pubkeys, apiBaseTrimmed, envApiKey || undefined)
+      setBalances(fetched)
+    } catch (err) {
+      console.error('Balance fetch failed', err)
+      setBalances({})
+    } finally {
+      setIsLoadingBalances(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!wallets.length) return
+    void refreshBalances(wallets)
+  }, [wallets, apiBaseTrimmed])
+
+  const handleDownloadKeys = () => {
+    if (!wallets.length) return
+    const text = wallets
+      .map((w, idx) => `${idx + 1}. ${w.name}: ${bs58.encode(w.keypair.secretKey)}`)
       .join('\n')
-    setWalletInput(exportable)
+    const blob = new Blob([text], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `wallet-bundle-${Date.now()}.txt`
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   const toggleWallet = (name: string) => {
@@ -329,7 +346,7 @@ function App() {
           <div className="card-head">
             <div>
               <p className="eyebrow">Wallets</p>
-              <h2>Load up to 30</h2>
+              <h2>Generate up to 30</h2>
             </div>
             <div className="row" style={{ gap: '0.5rem', alignItems: 'center' }}>
               <label className="field" style={{ width: 120 }}>
@@ -348,26 +365,19 @@ function App() {
               <button className="ghost" onClick={handleGenerateWallets}>
                 Generate
               </button>
-              <button className="ghost" onClick={handleLoadWallets}>
-                Load wallets
-              </button>
+                <button className="ghost" onClick={() => refreshBalances(wallets)} disabled={isLoadingBalances}>
+                  {isLoadingBalances ? 'Loading...' : 'Refresh balances'}
+                </button>
+                <button className="ghost" onClick={handleDownloadKeys} disabled={!wallets.length}>
+                  Download keys
+                </button>
             </div>
           </div>
-          <p className="hint">
-            One per line. Formats: <code>name: base58</code> or
-            <code>[1,2,...]</code> JSON. Stored locally (base58 in
-            localStorage).
-          </p>
-          <textarea
-            value={walletInput}
-            onChange={(e) => setWalletInput(e.target.value)}
-            rows={6}
-            placeholder="trader-1: BASE58_SECRET...\ntrader-2: [12,34,...]"
-          />
+            <p className="hint">Generate a bundle, view balances, and download secrets as txt.</p>
           {wallets.length > 0 && (
             <div className="wallets">
               <div className="wallets-head">
-                <span>{wallets.length} loaded</span>
+                  <span>{wallets.length} generated</span>
                 <button
                   className="ghost"
                   onClick={() => setSelected(wallets.map((w) => w.name))}
@@ -375,18 +385,30 @@ function App() {
                   Select all
                 </button>
               </div>
-              <div className="wallet-grid">
-                {wallets.map((w) => (
-                  <label key={w.name} className="pill">
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(w.name)}
-                      onChange={() => toggleWallet(w.name)}
-                    />
-                    <span>{w.name}</span>
-                  </label>
-                ))}
-              </div>
+                <div className="wallet-grid">
+                  {wallets.map((w, idx) => (
+                    <label key={w.name} className="pill" style={{ justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(w.name)}
+                            onChange={() => toggleWallet(w.name)}
+                          />
+                          <span>{idx + 1}. {w.name}</span>
+                        </div>
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          {w.keypair.publicKey.toBase58()}
+                        </span>
+                      </div>
+                      <span className="metric" style={{ fontSize: 14 }}>
+                        {balances[w.keypair.publicKey.toBase58()] !== undefined
+                          ? `${(balances[w.keypair.publicKey.toBase58()]! / 1_000_000_000).toFixed(4)} SOL`
+                          : '…'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
             </div>
           )}
         </div>

@@ -1,6 +1,6 @@
 import express from 'express'
 import cors from 'cors'
-import { Connection } from '@solana/web3.js'
+import { Connection, PublicKey } from '@solana/web3.js'
 import dotenv from 'dotenv'
 
 dotenv.config()
@@ -63,6 +63,25 @@ app.post('/sendRaw', async (req, res) => {
     await connection.confirmTransaction({ signature: sig, blockhash: bh, lastValidBlockHeight: lvh }, 'finalized')
 
     res.json({ signature: sig })
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+  }
+})
+
+app.post('/balances', async (req, res) => {
+  try {
+    const { pubkeys } = req.body || {}
+    if (!Array.isArray(pubkeys)) return res.status(400).json({ error: 'pubkeys array required' })
+    if (pubkeys.length === 0) return res.json({ balances: {} })
+    if (pubkeys.length > 30) return res.status(400).json({ error: 'max 30 pubkeys' })
+
+    const keys = pubkeys.map((p) => new PublicKey(p))
+    const infos = await connection.getMultipleAccountsInfo(keys, { commitment: 'processed' })
+    const balances = keys.reduce((acc, key, idx) => {
+      acc[key.toBase58()] = infos[idx]?.lamports ?? 0
+      return acc
+    }, {})
+    res.json({ balances })
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
   }

@@ -23,6 +23,25 @@ export type WalletSendResult = {
   error?: string
 }
 
+export async function fetchBalances(
+  pubkeys: PublicKey[],
+  apiBase: string,
+  apiKey?: string,
+): Promise<Record<string, number>> {
+  if (!pubkeys.length) return {}
+  const res = await fetch(`${apiBase}/balances`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { 'x-api-key': apiKey } : {}),
+    },
+    body: JSON.stringify({ pubkeys: pubkeys.map((p) => p.toBase58()) }),
+  })
+  if (!res.ok) throw new Error(`Balance fetch failed: ${res.status}`)
+  const data = (await res.json()) as { balances: Record<string, number> }
+  return data.balances || {}
+}
+
 type BlockhashInfo = { blockhash: string; lastValidBlockHeight: number }
 
 async function fetchBlockhash(apiBase: string, apiKey?: string): Promise<BlockhashInfo> {
