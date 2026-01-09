@@ -9,7 +9,7 @@ import {
 } from './lib/solana'
 import './App.css'
 
-const envApi = import.meta.env.VITE_API_BASE ?? 'http://localhost:8787'
+const envApi = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8787').trim().replace(/\/$/, '')
 const envApiKey = import.meta.env.VITE_API_KEY ?? ''
 const envGate = import.meta.env.VITE_DASH_PASSWORD ?? ''
 const MAX_WALLETS = 30
@@ -32,7 +32,6 @@ function toRawAmount(amount: string, decimals: number): bigint {
 }
 
 function App() {
-  const [apiBase, setApiBase] = useState(envApi)
   const [wallets, setWallets] = useState<WalletRef[]>([])
   const [selected, setSelected] = useState<string[]>([])
   const [generateCount, setGenerateCount] = useState(5)
@@ -50,8 +49,7 @@ function App() {
   const [isAuthed, setIsAuthed] = useState(false)
   const [gateInput, setGateInput] = useState('')
   const [gateError, setGateError] = useState<string | null>(null)
-
-  const apiBaseTrimmed = useMemo(() => apiBase.trim().replace(/\/$/, ''), [apiBase])
+  const apiBaseTrimmed = useMemo(() => envApi, [])
 
   // Restore persisted wallets on load
   useEffect(() => {
@@ -256,11 +254,7 @@ function App() {
           </div>
           <label className="field">
             <span>API base URL</span>
-            <input
-              value={apiBase}
-              onChange={(e) => setApiBase(e.target.value)}
-              placeholder="https://your-railway-app.up.railway.app"
-            />
+            <input value={apiBaseTrimmed} readOnly />
           </label>
           <div className="row">
             <label className="field">
