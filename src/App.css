@@ -199,6 +199,12 @@ textarea {
   list-style: none;
 }
 
+.bundle-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .bundle-head::-webkit-details-marker {
   display: none;
 }
@@ -226,6 +232,19 @@ textarea {
 }
 
 .address-chip:hover {
+  border-color: var(--accent);
+}
+
+.icon-btn {
+  background: #0b0b13;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
   border-color: var(--accent);
 }
 

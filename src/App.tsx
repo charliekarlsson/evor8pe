@@ -183,21 +183,18 @@ function App() {
     void refreshBalances(allWallets)
   }, [allWallets, apiBaseTrimmed])
 
-  const handleDownloadKeys = () => {
-    if (!bundles.length) return
+  const handleDownloadBundle = (bundle: WalletBundle) => {
+    if (!bundle.wallets.length) return
     const lines: string[] = []
-    bundles.forEach((b, bIdx) => {
-      lines.push(`${bIdx + 1}. ${b.label}`)
-      b.wallets.forEach((w, idx) => {
-        lines.push(`  ${idx + 1}. ${w.name}: ${bs58.encode(w.keypair.secretKey)}`)
-      })
-      lines.push('')
+    lines.push(bundle.label)
+    bundle.wallets.forEach((w, idx) => {
+      lines.push(`${idx + 1}. ${w.name}: ${bs58.encode(w.keypair.secretKey)}`)
     })
     const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `wallet-bundles-${Date.now()}.txt`
+    link.download = `${bundle.label.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}.txt`
     link.click()
     URL.revokeObjectURL(url)
   }
@@ -424,9 +421,6 @@ function App() {
               >
                   {isLoadingBalances ? 'Loading...' : 'Refresh balances'}
                 </button>
-              <button className="ghost" onClick={handleDownloadKeys} disabled={!allWallets.length}>
-                  Download keys
-                </button>
             </div>
           </div>
           <p className="hint">Generate a bundle, expand to see wallets, click address to copy.</p>
@@ -459,8 +453,22 @@ function App() {
                           {bundleWallets.length} wallets • {(bundleBalance / 1_000_000_000).toFixed(4)} SOL total
                         </div>
                       </div>
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        Bundle {bIdx + 1}
+                      <div className="bundle-actions">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          title="Save keys"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            handleDownloadBundle(bundle)
+                          }}
+                        >
+                          💾
+                        </button>
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          Bundle {bIdx + 1}
+                        </span>
                       </div>
                     </summary>
                     <div className="wallet-list">
